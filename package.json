@@ -1,0 +1,67 @@
+{
+  "name": "c-comment-fold-helper",
+  "displayName": "C/C++ Comment Fold Helper",
+  "description": "Smart C/C++ Comment Fold Previews",
+  "version": "0.1.0",
+  "publisher": "ngxxfus",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ngxx-fus/vscode-c-comment-helper"
+  },
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Other"
+  ],
+  "keywords": [
+    "c",
+    "cpp",
+    "doxygen",
+    "fold",
+    "preview"
+  ],
+  "activationEvents": [
+    "onLanguage:c",
+    "onLanguage:cpp",
+    "onLanguage:cuda-cpp"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "cCommentFoldHelper.toggleCompactBanner",
+        "title": "C/C++ Comment: Toggle Compact Banner / Multi-line Box"
+      },
+      {
+        "command": "cCommentFoldHelper.refreshPreviews",
+        "title": "C/C++ Comment: Refresh Fold Previews"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "cCommentFoldHelper.toggleCompactBanner",
+        "key": "alt+c",
+        "when": "editorTextFocus && (editorLangId == c || editorLangId == cpp)"
+      },
+      {
+        "command": "cCommentFoldHelper.toggleCompactBanner",
+        "key": "ctrl+k ctrl+b",
+        "when": "editorTextFocus && (editorLangId == c || editorLangId == cpp)"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.75.0",
+    "@vscode/vsce": "^3.2.1",
+    "typescript": "^5.3.3"
+  }
+}
