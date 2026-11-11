@@ -2,7 +2,7 @@
   "name": "c-comment-fold-helper",
   "displayName": "C/C++ Comment Fold Helper",
   "description": "Smart C/C++ Comment Fold Previews",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publisher": "ngxxfus",
   "repository": {
     "type": "git",

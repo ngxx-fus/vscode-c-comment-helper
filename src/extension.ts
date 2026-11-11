@@ -65,12 +65,12 @@ export function isBannerLine(text: string): boolean {
 
 export function isDualTokenHeader(line: string): boolean {
     const l = line.trim();
-    return /\/\*+.*?\*\/\/\*\*/.test(l) || /\/\*+.*?\/\/\*\*/.test(l) || l.endsWith('//**');
+    return /\/\*+.*?\*\/\/\*\*/.test(l) || /\/\*+.*?\/\/\*\*/.test(l) || /\/\/\*+$/.test(l);
 }
 
 export function isCommentEnd(line: string): boolean {
     const l = line.trim();
-    if (isDualTokenHeader(l) || l.endsWith('/**') || l.endsWith('/*') || l.endsWith('//**')) {
+    if (isDualTokenHeader(l) || l.endsWith('/**') || l.endsWith('/*') || /\/\/\*+$/.test(l)) {
         return false;
     }
     return /\*+\/\s*$/.test(l);
@@ -78,7 +78,7 @@ export function isCommentEnd(line: string): boolean {
 
 export function isCompactBanner(line: string): boolean {
     const l = line.trim();
-    return /^\/\*[ \t].*?\*+\/$/.test(l) && !isDualTokenHeader(l);
+    return /^\/\*+[ \t].*?\*{3,}\/$/.test(l) && !isDualTokenHeader(l);
 }
 
 export function extractCommentTitle(lines: string[]): string | null {
@@ -86,9 +86,9 @@ export function extractCommentTitle(lines: string[]): string | null {
         return null;
     }
 
-    // Priority 1: Check for explicit @brief, \brief, brief: tag
+    // Priority 1: Check for explicit @brief, \brief, brief: tag (must be at the start of a comment/line)
     for (const line of lines) {
-        const m = /[@\\]brief\s*:?\s*(.+)/i.exec(line) ||
+        const m = /^\s*(?:\/\*+|\*+|\/\/+)?\s*[@\\]brief\s*:?\s*(.+)/i.exec(line) ||
                   /^\s*\*+\s*brief\s*:?\s*(.+)/i.exec(line) ||
                   /^\s*\/\/+\s*brief\s*:?\s*(.+)/i.exec(line);
         if (m) {
@@ -121,49 +121,57 @@ export function detectIndent(lines: string[]): string {
 }
 
 export function detectBannerWidth(lines: string[]): number {
+    // 1. Check for explicit banner border lines (e.g. /******... or *******.../ or //******)
     for (const l of lines) {
         const stripped = l.trim();
         if ((stripped.startsWith('/*') || stripped.startsWith('*') || stripped.startsWith('//')) && isBannerLine(stripped)) {
             const lineLen = l.trimEnd().length;
-            if (lineLen >= 40) {
+            if (lineLen >= 30) {
                 return lineLen;
             }
         }
     }
 
-    let maxLen = 0;
+    // 2. Check for single-line compact banner with trailing asterisks (e.g. /** ... ******/)
     for (const l of lines) {
-        maxLen = Math.max(maxLen, l.trimEnd().length);
+        const trimmed = l.trimEnd();
+        if (/\*{3,}\/$/.test(trimmed)) {
+            return trimmed.length;
+        }
     }
-    if (maxLen >= 100) {
-        return 120;
-    } else if (maxLen >= 70) {
-        return 80;
-    }
-    return Math.max(maxLen, DEFAULT_BANNER_WIDTH);
+
+    // 3. Not a banner -> 0 width
+    return 0;
 }
 
-export function buildCompactBanner(title: string, width = 120, indent = ''): string {
-    const prefix = `${indent}/* `;
-    const titleDisplay = `${title}`;
-    const used = prefix.length + titleDisplay.length + 2; // 2 for closing '*/'
-    const fillLen = Math.max(3, width - used);
-    const stars = '*'.repeat(fillLen);
-    return `${prefix}${titleDisplay}${stars}*/`;
+export function buildCompactBanner(title: string, width = 0, indent = '', hasBrief = false): string {
+    if (width > 0) {
+        const prefix = `${indent}/** `;
+        const titleDisplay = `${title} `;
+        const used = prefix.length + titleDisplay.length + 2; // 2 for closing '*/'
+        const fillLen = Math.max(3, width - used);
+        const stars = '*'.repeat(fillLen);
+        return `${prefix}${titleDisplay}${stars}*/`;
+    }
+
+    if (hasBrief) {
+        return `${indent}/**  @brief ${title} */`;
+    }
+    return `${indent}/**  ${title} */`;
 }
 
-export function buildBoxBanner(title: string, width = 120, indent = '', isDualToken = false, hasBrief = false): string {
+export function buildBoxBanner(title: string, width = 120, indent = '', isDualToken = true, hasBrief = false): string {
     const effWidth = Math.max(20, width - indent.length);
     if (isDualToken) {
-        const top = `${indent}/` + '*'.repeat(effWidth - 5) + '//**';
+        const top = `${indent}/` + '*'.repeat(effWidth - 8) + '//*****';
         const content = `${indent} * ${title}`;
-        const bottom = `${indent} ` + '*'.repeat(effWidth - 2) + '/';
+        const bottom = `${indent}` + '*'.repeat(effWidth - 1) + '/';
         return `${top}\n${content}\n${bottom}`;
     }
 
     const top = `${indent}/` + '*'.repeat(effWidth - 1);
     const content = hasBrief ? `${indent} * @brief ${title}` : `${indent} * ${title}`;
-    const bottom = `${indent} ` + '*'.repeat(effWidth - 2) + '/';
+    const bottom = `${indent}` + '*'.repeat(effWidth - 1) + '/';
     return `${top}\n${content}\n${bottom}`;
 }
 
@@ -228,7 +236,8 @@ function updateFoldDecorations(editor: vscode.TextEditor | undefined): void {
 
         const indent = detectIndent([headerText]);
         const width = detectBannerWidth(commentLines);
-        const compactBanner = buildCompactBanner(title, width, indent);
+        const hasBrief = commentLines.some(l => /^\s*(?:\/\*+|\*+|\/\/+)?\s*[@\\]brief\b/i.test(l));
+        const compactBanner = buildCompactBanner(title, width, indent, hasBrief);
 
         // 1. Hide the raw opening asterisks line
         hideDecorations.push({
@@ -246,13 +255,15 @@ function updateFoldDecorations(editor: vscode.TextEditor | undefined): void {
         });
 
         // 3. If VS Code left the closing asterisks border visible (e.g. line 531), hide it too!
-        const nextVisibleLine = foldEndLine + 1;
-        if (nextVisibleLine < doc.lineCount) {
-            const nextText = doc.lineAt(nextVisibleLine).text;
-            if (isBannerLine(nextText) || isCommentEnd(nextText)) {
-                hideDecorations.push({
-                    range: new vscode.Range(nextVisibleLine, 0, nextVisibleLine, nextText.length)
-                });
+        if (width > 0) {
+            const nextVisibleLine = foldEndLine + 1;
+            if (nextVisibleLine < doc.lineCount) {
+                const nextText = doc.lineAt(nextVisibleLine).text;
+                if (isBannerLine(nextText) || isCommentEnd(nextText)) {
+                    hideDecorations.push({
+                        range: new vscode.Range(nextVisibleLine, 0, nextVisibleLine, nextText.length)
+                    });
+                }
             }
         }
     }
@@ -349,7 +360,7 @@ export function activate(context: vscode.ExtensionContext): void {
             const width = detectBannerWidth(lines);
             const indent = detectIndent(lines);
             const isDualToken = lines.some(l => isDualTokenHeader(l));
-            const hasBrief = lines.some(l => l.includes('@brief') || l.includes('\\brief'));
+            const hasBrief = lines.some(l => /^\s*(?:\/\*+|\*+|\/\/+)?\s*[@\\]brief\b/i.test(l));
 
             let formatted: string;
             if (lines.length > 1) {
@@ -360,13 +371,15 @@ export function activate(context: vscode.ExtensionContext): void {
                     isDualToken,
                     hasBrief
                 });
-                formatted = buildCompactBanner(title, width, indent);
+                formatted = buildCompactBanner(title, width, indent, hasBrief);
             } else {
                 const cached = commentCache.get(title);
                 if (cached) {
                     formatted = cached.text;
+                } else if (width > 0) {
+                    formatted = buildBoxBanner(title, width, indent, true, hasBrief);
                 } else {
-                    formatted = buildBoxBanner(title, width, indent, isDualToken, hasBrief);
+                    formatted = buildCompactBanner(title, 0, indent, hasBrief);
                 }
             }
 
