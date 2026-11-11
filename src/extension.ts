@@ -254,22 +254,24 @@ function updateFoldDecorations(editor: vscode.TextEditor | undefined): void {
             }
         });
 
-        // 3. If VS Code left closing comment line(s) or border visible, hide them too!
-        for (let l = foldEndLine + 1; l < doc.lineCount; l++) {
-            const nextText = doc.lineAt(l).text;
-            if (isBannerLine(nextText) || isCommentEnd(nextText)) {
-                hideDecorations.push({
-                    range: new vscode.Range(l, 0, l, nextText.length)
-                });
-                if (isCommentEnd(nextText)) {
-                    break;
-                }
-            } else if (nextText.trim().startsWith('*')) {
-                hideDecorations.push({
-                    range: new vscode.Range(l, 0, l, nextText.length)
-                });
-            } else {
+        // 3. If VS Code left closing comment line(s) or border unfolded, hide them (never touch past commentEndLine!)
+        let commentEndLine = foldStartLine;
+        for (let l = foldStartLine; l < doc.lineCount; l++) {
+            const text = doc.lineAt(l).text;
+            if (isCommentEnd(text)) {
+                commentEndLine = l;
                 break;
+            }
+        }
+
+        if (foldEndLine < commentEndLine) {
+            for (let l = foldEndLine + 1; l <= commentEndLine; l++) {
+                const nextText = doc.lineAt(l).text;
+                if (nextText.trim().length > 0) {
+                    hideDecorations.push({
+                        range: new vscode.Range(l, 0, l, nextText.length)
+                    });
+                }
             }
         }
     }
@@ -278,7 +280,42 @@ function updateFoldDecorations(editor: vscode.TextEditor | undefined): void {
     editor.setDecorations(bannerOverlayDecorationType, overlayDecorations);
 }
 
+export class CommentFoldingRangeProvider implements vscode.FoldingRangeProvider {
+    provideFoldingRanges(document: vscode.TextDocument): vscode.FoldingRange[] {
+        const ranges: vscode.FoldingRange[] = [];
+        let inComment = false;
+        let startLine = 0;
+
+        for (let i = 0; i < document.lineCount; i++) {
+            const line = document.lineAt(i).text.trim();
+            if (!inComment) {
+                if (line.startsWith('/*')) {
+                    if (isCommentEnd(line) && !isDualTokenHeader(line)) {
+                        continue;
+                    }
+                    inComment = true;
+                    startLine = i;
+                }
+            } else {
+                if (isCommentEnd(line)) {
+                    ranges.push(new vscode.FoldingRange(startLine, i, vscode.FoldingRangeKind.Comment));
+                    inComment = false;
+                }
+            }
+        }
+        return ranges;
+    }
+}
+
 export function activate(context: vscode.ExtensionContext): void {
+    // 0. Register custom CommentFoldingRangeProvider for complete comment folding
+    context.subscriptions.push(
+        vscode.languages.registerFoldingRangeProvider(
+            [{ language: 'c' }, { language: 'cpp' }, { language: 'cuda-cpp' }],
+            new CommentFoldingRangeProvider()
+        )
+    );
+
     // 1. Initial render & editor switch listener
     if (vscode.window.activeTextEditor) {
         updateFoldDecorations(vscode.window.activeTextEditor);
