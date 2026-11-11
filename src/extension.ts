@@ -254,16 +254,22 @@ function updateFoldDecorations(editor: vscode.TextEditor | undefined): void {
             }
         });
 
-        // 3. If VS Code left the closing asterisks border visible (e.g. line 531), hide it too!
-        if (width > 0) {
-            const nextVisibleLine = foldEndLine + 1;
-            if (nextVisibleLine < doc.lineCount) {
-                const nextText = doc.lineAt(nextVisibleLine).text;
-                if (isBannerLine(nextText) || isCommentEnd(nextText)) {
-                    hideDecorations.push({
-                        range: new vscode.Range(nextVisibleLine, 0, nextVisibleLine, nextText.length)
-                    });
+        // 3. If VS Code left closing comment line(s) or border visible, hide them too!
+        for (let l = foldEndLine + 1; l < doc.lineCount; l++) {
+            const nextText = doc.lineAt(l).text;
+            if (isBannerLine(nextText) || isCommentEnd(nextText)) {
+                hideDecorations.push({
+                    range: new vscode.Range(l, 0, l, nextText.length)
+                });
+                if (isCommentEnd(nextText)) {
+                    break;
                 }
+            } else if (nextText.trim().startsWith('*')) {
+                hideDecorations.push({
+                    range: new vscode.Range(l, 0, l, nextText.length)
+                });
+            } else {
+                break;
             }
         }
     }

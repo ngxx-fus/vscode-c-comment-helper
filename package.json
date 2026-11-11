@@ -1,9 +1,9 @@
 {
   "name": "c-comment-fold-helper",
   "displayName": "C/C++ Comment Fold Helper",
-  "description": "Smart C/C++ Comment Fold Previews",
+  "description": "Better C/C++ Comment Fold Previews",
   "version": "0.1.1",
-  "publisher": "ngxxfus",
+  "publisher": "ngxx-fus",
   "repository": {
     "type": "git",
     "url": "https://github.com/ngxx-fus/vscode-c-comment-helper"
