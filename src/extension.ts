@@ -7,7 +7,7 @@ const commentCache = new Map<string, {
     text: string;
     width: number;
     indent: string;
-    isRenesas: boolean;
+    isDualToken: boolean;
     hasBrief: boolean;
 }>();
 
@@ -38,7 +38,7 @@ export function cleanText(text: string): string {
     cleaned = cleaned.replace(/^\s*\*+\/?\s*/, '');
     cleaned = cleaned.replace(/^\s*\/\/+\/?\s*/, '');
 
-    // Strip closing tokens and Renesas delimiters: */, **/, //, *, ***, //**, *//**
+    // Strip closing tokens and dual-token delimiters: */, **/, //, *, ***, //**, *//**
     cleaned = cleaned.replace(/\/\/\*+\s*$/, '');
     cleaned = cleaned.replace(/\*\/\/\*\*.*$/, '');
     cleaned = cleaned.replace(/\s*\*+\/\s*$/, '');
@@ -63,14 +63,14 @@ export function isBannerLine(text: string): boolean {
     return !/\w/.test(cleaned);
 }
 
-export function isRenesasHeader(line: string): boolean {
+export function isDualTokenHeader(line: string): boolean {
     const l = line.trim();
     return /\/\*+.*?\*\/\/\*\*/.test(l) || /\/\*+.*?\/\/\*\*/.test(l) || l.endsWith('//**');
 }
 
 export function isCommentEnd(line: string): boolean {
     const l = line.trim();
-    if (isRenesasHeader(l) || l.endsWith('/**') || l.endsWith('/*') || l.endsWith('//**')) {
+    if (isDualTokenHeader(l) || l.endsWith('/**') || l.endsWith('/*') || l.endsWith('//**')) {
         return false;
     }
     return /\*+\/\s*$/.test(l);
@@ -78,7 +78,7 @@ export function isCommentEnd(line: string): boolean {
 
 export function isCompactBanner(line: string): boolean {
     const l = line.trim();
-    return /^\/\*[ \t].*?\*+\/$/.test(l) && !isRenesasHeader(l);
+    return /^\/\*[ \t].*?\*+\/$/.test(l) && !isDualTokenHeader(l);
 }
 
 export function extractCommentTitle(lines: string[]): string | null {
@@ -152,9 +152,9 @@ export function buildCompactBanner(title: string, width = 120, indent = ''): str
     return `${prefix}${titleDisplay}${stars}*/`;
 }
 
-export function buildBoxBanner(title: string, width = 120, indent = '', isRenesas = false, hasBrief = false): string {
+export function buildBoxBanner(title: string, width = 120, indent = '', isDualToken = false, hasBrief = false): string {
     const effWidth = Math.max(20, width - indent.length);
-    if (isRenesas) {
+    if (isDualToken) {
         const top = `${indent}/` + '*'.repeat(effWidth - 5) + '//**';
         const content = `${indent} * ${title}`;
         const bottom = `${indent} ` + '*'.repeat(effWidth - 2) + '/';
@@ -206,9 +206,9 @@ function updateFoldDecorations(editor: vscode.TextEditor | undefined): void {
         const headerText = headerLine.text;
 
         // Check if this fold is a C/C++ comment block
-        const isRenesas = isRenesasHeader(headerText);
+        const isDualToken = isDualTokenHeader(headerText);
         const isBanner = isBannerLine(headerText) && (headerText.includes('/*') || headerText.includes('*/'));
-        const isCmt = isRenesas || isBanner || headerText.trim().startsWith('/*') || headerText.trim().startsWith('//');
+        const isCmt = isDualToken || isBanner || headerText.trim().startsWith('/*') || headerText.trim().startsWith('//');
 
         if (!isCmt) {
             continue;
@@ -317,7 +317,7 @@ export function activate(context: vscode.ExtensionContext): void {
                     break;
                 }
                 const prevText = doc.lineAt(startLineNum - 1).text.trim();
-                if (prevText.startsWith('*') || prevText.startsWith('/*') || prevText.startsWith('//') || isRenesasHeader(prevText)) {
+                if (prevText.startsWith('*') || prevText.startsWith('/*') || prevText.startsWith('//') || isDualTokenHeader(prevText)) {
                     startLineNum--;
                 } else {
                     break;
@@ -331,7 +331,7 @@ export function activate(context: vscode.ExtensionContext): void {
                     break;
                 }
                 const nextText = doc.lineAt(endLineNum + 1).text.trim();
-                if (nextText.startsWith('*') || isCommentEnd(nextText) || isRenesasHeader(nextText)) {
+                if (nextText.startsWith('*') || isCommentEnd(nextText) || isDualTokenHeader(nextText)) {
                     endLineNum++;
                 } else {
                     break;
@@ -348,7 +348,7 @@ export function activate(context: vscode.ExtensionContext): void {
             const title = extractCommentTitle(lines) || cleanText(blockText) || 'Section';
             const width = detectBannerWidth(lines);
             const indent = detectIndent(lines);
-            const isRenesas = lines.some(l => isRenesasHeader(l));
+            const isDualToken = lines.some(l => isDualTokenHeader(l));
             const hasBrief = lines.some(l => l.includes('@brief') || l.includes('\\brief'));
 
             let formatted: string;
@@ -357,7 +357,7 @@ export function activate(context: vscode.ExtensionContext): void {
                     text: blockText,
                     width,
                     indent,
-                    isRenesas,
+                    isDualToken,
                     hasBrief
                 });
                 formatted = buildCompactBanner(title, width, indent);
@@ -366,7 +366,7 @@ export function activate(context: vscode.ExtensionContext): void {
                 if (cached) {
                     formatted = cached.text;
                 } else {
-                    formatted = buildBoxBanner(title, width, indent, isRenesas, hasBrief);
+                    formatted = buildBoxBanner(title, width, indent, isDualToken, hasBrief);
                 }
             }
 
