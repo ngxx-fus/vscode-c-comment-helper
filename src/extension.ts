@@ -11,21 +11,16 @@ const commentCache = new Map<string, {
     hasBrief: boolean;
 }>();
 
-// 1. Hide decoration: visually conceals the raw asterisks lines
-const hideDecorationType = vscode.window.createTextEditorDecorationType({
-    color: 'transparent',
-    letterSpacing: '-1ch',
+// 1. Banner fold decoration: hides raw opening comment token and overlays 1-line compact preview
+const bannerFoldDecorationType = vscode.window.createTextEditorDecorationType({
     textDecoration: 'none; display: none;',
     rangeBehavior: vscode.DecorationRangeBehavior.ClosedClosed
 });
 
-// 2. Overlay banner decoration: displays the clean 1-line compact banner in place
-const bannerOverlayDecorationType = vscode.window.createTextEditorDecorationType({
-    after: {
-        color: '#6A9955',
-        fontStyle: 'italic',
-    },
-    rangeBehavior: vscode.DecorationRangeBehavior.ClosedOpen
+// 2. Hide decoration: visually conceals dangling closing comment lines (e.g. */ left outside folds)
+const hideLineDecorationType = vscode.window.createTextEditorDecorationType({
+    textDecoration: 'none; display: none;',
+    rangeBehavior: vscode.DecorationRangeBehavior.ClosedClosed
 });
 
 export function cleanText(text: string): string {
@@ -86,9 +81,9 @@ export function extractCommentTitle(lines: string[]): string | null {
         return null;
     }
 
-    // Priority 1: Check for explicit tag (@req, @defgroup, @brief, @file, etc.)
+    // Priority 1: Check for explicit title/header tag (@req, @defgroup, @brief, @file)
     for (const line of lines) {
-        const m = /^\s*(?:\/\*+|\*+|\/\/+)?\s*(@\w+(?:\{[^}]*\})?\s*:?\s*.+)/i.exec(line) ||
+        const m = /^\s*(?:\/\*+|\*+|\/\/+)?\s*(@(?:req|defgroup|brief|file)\b(?:\{[^}]*\})?\s*:?\s*.+)/i.exec(line) ||
                   /^\s*(?:\/\*+|\*+|\/\/+)?\s*\\brief\s*:?\s*(.+)/i.exec(line) ||
                   /^\s*\*+\s*brief\s*:?\s*(.+)/i.exec(line);
         if (m) {
@@ -99,12 +94,19 @@ export function extractCommentTitle(lines: string[]): string | null {
         }
     }
 
-    // Priority 2: First content line
+    // Priority 2: First content line (skipping banner borders and non-title section tags)
     for (const line of lines) {
         const cleaned = cleanText(line);
-        if (cleaned && !isBannerLine(cleaned)) {
-            return cleaned;
+        if (!cleaned || isBannerLine(cleaned)) {
+            continue;
         }
+
+        // Skip section tags that belong to body/details rather than title
+        if (/^@(?:snippet|retval|return|returns|param|see|code|endcode|note|warning|ingroup|author|date|version)\b/i.test(cleaned)) {
+            continue;
+        }
+
+        return cleaned;
     }
 
     return null;
@@ -191,20 +193,20 @@ function updateFoldDecorations(editor: vscode.TextEditor | undefined): void {
 
     const doc = editor.document;
     if (doc.languageId !== 'c' && doc.languageId !== 'cpp' && doc.languageId !== 'cuda-cpp') {
-        editor.setDecorations(hideDecorationType, []);
-        editor.setDecorations(bannerOverlayDecorationType, []);
+        editor.setDecorations(bannerFoldDecorationType, []);
+        editor.setDecorations(hideLineDecorationType, []);
         return;
     }
 
     const visibleRanges = editor.visibleRanges;
     if (!visibleRanges || visibleRanges.length === 0) {
-        editor.setDecorations(hideDecorationType, []);
-        editor.setDecorations(bannerOverlayDecorationType, []);
+        editor.setDecorations(bannerFoldDecorationType, []);
+        editor.setDecorations(hideLineDecorationType, []);
         return;
     }
 
+    const foldDecorations: vscode.DecorationOptions[] = [];
     const hideDecorations: vscode.DecorationOptions[] = [];
-    const overlayDecorations: vscode.DecorationOptions[] = [];
 
     // Folds correspond to gaps between visible ranges
     for (let i = 0; i < visibleRanges.length - 1; i++) {
@@ -239,52 +241,50 @@ function updateFoldDecorations(editor: vscode.TextEditor | undefined): void {
             continue;
         }
 
-        const indent = detectIndent([headerText]);
-        const width = detectBannerWidth(commentLines);
+        // Determine column where comment token begins (e.g. 4 for "    /**")
+        const startCol = Math.max(0, headerLine.firstNonWhitespaceCharacterIndex);
+        const maxBannerLen = Math.max(20, 100 - startCol);
         const hasBrief = commentLines.some(l => /^\s*(?:\/\*+|\*+|\/\/+)?\s*[@\\]brief\b/i.test(l));
-        const compactBanner = buildCompactBanner(title, width, indent, hasBrief);
 
-        // 1. Hide the raw opening asterisks line
-        hideDecorations.push({
-            range: new vscode.Range(foldStartLine, 0, foldStartLine, headerText.length)
-        });
+        // Build compact banner WITHOUT leading indent (native editor whitespace handles columns 0..startCol)
+        const compactBanner = buildCompactBanner(title, 0, '', hasBrief, maxBannerLen);
 
-        // 2. Overlay the compact 1-line banner at the start of the header line
-        overlayDecorations.push({
-            range: new vscode.Range(foldStartLine, 0, foldStartLine, 0),
+        // 1. Hide from startCol to end of line, and attach compact preview via after
+        foldDecorations.push({
+            range: new vscode.Range(foldStartLine, startCol, foldStartLine, headerText.length),
             renderOptions: {
                 after: {
-                    contentText: compactBanner
+                    contentText: compactBanner,
+                    color: '#6A9955',
+                    fontStyle: 'italic'
                 }
             }
         });
 
-        // 3. For decorative box banners (width > 0), hide closing asterisks border if left visible
-        if (width > 0) {
-            let commentEndLine = foldStartLine;
-            for (let l = foldStartLine; l < doc.lineCount; l++) {
-                const text = doc.lineAt(l).text;
-                if (isCommentEnd(text)) {
-                    commentEndLine = l;
-                    break;
-                }
+        // 2. Hide closing banner or */ lines if left visible outside fold
+        let commentEndLine = foldStartLine;
+        for (let l = foldStartLine; l < doc.lineCount; l++) {
+            const text = doc.lineAt(l).text;
+            if (isCommentEnd(text)) {
+                commentEndLine = l;
+                break;
             }
+        }
 
-            if (foldEndLine < commentEndLine) {
-                for (let l = foldEndLine + 1; l <= commentEndLine; l++) {
-                    const nextText = doc.lineAt(l).text;
-                    if (isBannerLine(nextText) || isCommentEnd(nextText)) {
-                        hideDecorations.push({
-                            range: new vscode.Range(l, 0, l, nextText.length)
-                        });
-                    }
+        if (foldEndLine < commentEndLine) {
+            for (let l = foldEndLine + 1; l <= commentEndLine; l++) {
+                const nextText = doc.lineAt(l).text;
+                if (isBannerLine(nextText) || isCommentEnd(nextText)) {
+                    hideDecorations.push({
+                        range: new vscode.Range(l, 0, l, nextText.length)
+                    });
                 }
             }
         }
     }
 
-    editor.setDecorations(hideDecorationType, hideDecorations);
-    editor.setDecorations(bannerOverlayDecorationType, overlayDecorations);
+    editor.setDecorations(bannerFoldDecorationType, foldDecorations);
+    editor.setDecorations(hideLineDecorationType, hideDecorations);
 }
 
 export class CommentFoldingRangeProvider implements vscode.FoldingRangeProvider {
@@ -434,7 +434,18 @@ export function activate(context: vscode.ExtensionContext): void {
         })
     );
 
-    // 5. Command: Toggle compact banner manually (Alt+C / Ctrl+K Ctrl+B)
+    // 5. Command: Set as default folding provider in settings
+    context.subscriptions.push(
+        vscode.commands.registerCommand('cCommentFoldHelper.setDefaultFoldingProvider', async () => {
+            const config = vscode.workspace.getConfiguration();
+            await config.update('[c]', { ...config.get('[c]'), 'editor.defaultFoldingRangeProvider': 'ngxx-fus.c-comment-fold-helper' }, vscode.ConfigurationTarget.Global);
+            await config.update('[cpp]', { ...config.get('[cpp]'), 'editor.defaultFoldingRangeProvider': 'ngxx-fus.c-comment-fold-helper' }, vscode.ConfigurationTarget.Global);
+            await config.update('[cuda-cpp]', { ...config.get('[cuda-cpp]'), 'editor.defaultFoldingRangeProvider': 'ngxx-fus.c-comment-fold-helper' }, vscode.ConfigurationTarget.Global);
+            vscode.window.showInformationMessage('C/C++ Comment Fold Helper configured as default folding provider.');
+        })
+    );
+
+    // 6. Command: Toggle compact banner manually (Alt+C / Ctrl+K Ctrl+B)
     context.subscriptions.push(
         vscode.commands.registerCommand('cCommentFoldHelper.toggleCompactBanner', async () => {
             const editor = vscode.window.activeTextEditor;
@@ -517,6 +528,6 @@ export function activate(context: vscode.ExtensionContext): void {
 }
 
 export function deactivate(): void {
-    hideDecorationType.dispose();
-    bannerOverlayDecorationType.dispose();
+    bannerFoldDecorationType.dispose();
+    hideLineDecorationType.dispose();
 }

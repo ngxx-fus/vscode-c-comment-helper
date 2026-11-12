@@ -54,14 +54,14 @@ To ensure VS Code always uses complete zero-gap comment folding instead of leavi
 ## Installation
 
 ```bash
-code --install-extension c-comment-fold-helper-0.1.4.vsix
+code --install-extension c-comment-fold-helper-0.1.8.vsix
 ```
 
 Or in VS Code:
 
 1. Open Extensions (<kbd>Ctrl+Shift+X</kbd>).
 2. Click `...` (Views and More Actions) in the top-right corner.
-3. Select **Install from VSIX...** and pick `c-comment-fold-helper-0.1.4.vsix`.
+3. Select **Install from VSIX...** and pick `c-comment-fold-helper-0.1.8.vsix`.
 
 ---
 

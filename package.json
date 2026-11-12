@@ -2,7 +2,7 @@
   "name": "c-comment-fold-helper",
   "displayName": "C/C++ Comment Fold Helper",
   "description": "Better C/C++ Comment Fold Previews",
-  "version": "0.1.5",
+  "version": "0.1.8",
   "publisher": "ngxx-fus",
   "repository": {
     "type": "git",
@@ -48,6 +48,10 @@
       {
         "command": "cCommentFoldHelper.refreshPreviews",
         "title": "C/C++ Comment: Refresh Fold Previews"
+      },
+      {
+        "command": "cCommentFoldHelper.setDefaultFoldingProvider",
+        "title": "C/C++ Comment: Set as Default Folding Provider"
       }
     ],
     "keybindings": [

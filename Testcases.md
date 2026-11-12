@@ -174,3 +174,116 @@ Verify GTIOCA Timing
 ```
 
 *(Automatically cropped to keep line $\le$ 100 columns)*
+
+## Case 6: Single-line Opening with Multiple Tags
+
+### Input
+
+```c
+/*******************************************************************************************************************//**
+ * Get timer information and store it in provided pointer p_info. Implements @ref timer_api_t::infoGet.
+ *
+ * Example:
+ * @snippet timer_example.c timer_info_get
+ *
+ * @retval STATUS_SUCCESS              Period, count direction, frequency, and ELC event written to caller's
+ *                                     structure successfully.
+ * @retval ERR_ASSERTION               p_ctrl or p_info was NULL.
+ * @retval ERR_NOT_OPEN                The instance is not opened.
+ **********************************************************************************************************************/
+```
+
+### Extracted Title
+
+```text
+Get timer information and store it in provided pointer p_info. Implements @ref timer_api_t::infoGet.
+```
+
+### Generated Preview
+
+```c
+/** Get timer information and store it in provided pointer p_info. Implements @ref timer_api_t::infoGet. */
+```
+
+*(Automatically cropped to keep line $\le$ 100 columns)*
+
+## Case 7: Single-line Opening with Multiple Tags
+
+### Input
+
+```c
+            /*
+             * In TIMER_MODE_TRIANGLE_WAVE_ASYMMETRIC_PWM_MODE3, if this is a crest duty cycle, then update the crest
+             * duty cycle register. Otherwise, update the trough duty cycle register.
+             * Or in case of One-Shot pulse mode, buffer registers are either GTCCRC and GTCCRD for pulses on GTIOCnA
+             * pin or GTCCRE and GTCCRF for pulses on GTIOCnB pin.
+             * Hence update registers GTCCRD, GTCCRF for trailing edge dutycycle counts on GTIOCnA, GTIOCnB
+             * respectively, otherwise update registers GTCCRC,GTCCRE for leading edge dutycycle counts on GTIOCnA,
+             * GTIOCnB respectively.
+             */
+```
+
+### Extracted Title
+
+```text
+In TIMER_MODE_TRIANGLE_WAVE_ASYMMETRIC_PWM_MODE3, if this is a crest duty cycle, then update the crest
+```
+
+### Generated Preview
+
+```c
+            /** In TIMER_MODE_TRIANGLE_WAVE_ASYMMETRIC_PWM_MODE3, if this is a crest duty cycle, then update the crest */
+```
+
+*(Automatically cropped to keep line $\le$ 100 columns)*
+
+## Case 8: Single-line Opening with Multiple Tags
+
+### Input
+
+```c
+    /**
+     * On the RA6T2, channels [0,3] are PWM Output Delay Circuit channels.
+     *
+     * Verify that an error is returned if the channel is not a PWM Output Delay Circuit channel.
+     */
+```
+
+### Extracted Title
+
+```text
+On the RA6T2, channels [0,3] are PWM Output Delay Circuit channels.
+```
+
+### Generated Preview
+
+```c
+    /** On the RA6T2, channels [0,3] are PWM Output Delay Circuit channels. */
+```
+
+
+NOTE: Get the col of `    /**`
+
+*(Automatically cropped to keep line $\le$ 100 columns)*
+
+## Case X: Single-line Opening with Multiple Tags
+
+### Input
+
+```c
+
+```
+
+### Extracted Title
+
+```text
+
+```
+
+### Generated Preview
+
+```c
+/**  */
+```
+
+*(Automatically cropped to keep line $\le$ 100 columns)*
