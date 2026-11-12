@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 
-const DEFAULT_BANNER_WIDTH = 120;
+const DEFAULT_BANNER_WIDTH = 100;
 
 // Persistent in-memory cache for restoring original multi-line comments
 const commentCache = new Map<string, {
@@ -86,11 +86,11 @@ export function extractCommentTitle(lines: string[]): string | null {
         return null;
     }
 
-    // Priority 1: Check for explicit @brief, \brief, brief: tag (must be at the start of a comment/line)
+    // Priority 1: Check for explicit tag (@req, @defgroup, @brief, @file, etc.)
     for (const line of lines) {
-        const m = /^\s*(?:\/\*+|\*+|\/\/+)?\s*[@\\]brief\s*:?\s*(.+)/i.exec(line) ||
-                  /^\s*\*+\s*brief\s*:?\s*(.+)/i.exec(line) ||
-                  /^\s*\/\/+\s*brief\s*:?\s*(.+)/i.exec(line);
+        const m = /^\s*(?:\/\*+|\*+|\/\/+)?\s*(@\w+(?:\{[^}]*\})?\s*:?\s*.+)/i.exec(line) ||
+                  /^\s*(?:\/\*+|\*+|\/\/+)?\s*\\brief\s*:?\s*(.+)/i.exec(line) ||
+                  /^\s*\*+\s*brief\s*:?\s*(.+)/i.exec(line);
         if (m) {
             const cleaned = cleanText(m[1]);
             if (cleaned && !isBannerLine(cleaned)) {
@@ -144,20 +144,25 @@ export function detectBannerWidth(lines: string[]): number {
     return 0;
 }
 
-export function buildCompactBanner(title: string, width = 0, indent = '', hasBrief = false): string {
-    if (width > 0) {
-        const prefix = `${indent}/** `;
-        const titleDisplay = `${title} `;
-        const used = prefix.length + titleDisplay.length + 2; // 2 for closing '*/'
-        const fillLen = Math.max(3, width - used);
-        const stars = '*'.repeat(fillLen);
-        return `${prefix}${titleDisplay}${stars}*/`;
+export function buildCompactBanner(title: string, width = 0, indent = '', hasBrief = false, maxCols = 100): string {
+    let prefix = `${indent}/** `;
+    const suffix = ' */';
+
+    if (hasBrief && !title.startsWith('@brief') && !title.startsWith('\\brief') && !title.startsWith('@')) {
+        prefix = `${indent}/** @brief `;
     }
 
-    if (hasBrief) {
-        return `${indent}/**  @brief ${title} */`;
+    // Crop if preview exceeds maxCols (100 columns)
+    const currentLen = prefix.length + title.length + suffix.length;
+    if (currentLen > maxCols) {
+        const availableTitleLen = maxCols - prefix.length - suffix.length - 3; // 3 for '...'
+        if (availableTitleLen > 5) {
+            const croppedTitle = title.slice(0, availableTitleLen).trimEnd() + '...';
+            return `${prefix}${croppedTitle}${suffix}`;
+        }
     }
-    return `${indent}/**  ${title} */`;
+
+    return `${prefix}${title}${suffix}`;
 }
 
 export function buildBoxBanner(title: string, width = 120, indent = '', isDualToken = true, hasBrief = false): string {
@@ -254,23 +259,25 @@ function updateFoldDecorations(editor: vscode.TextEditor | undefined): void {
             }
         });
 
-        // 3. If VS Code left closing comment line(s) or border unfolded, hide them (never touch past commentEndLine!)
-        let commentEndLine = foldStartLine;
-        for (let l = foldStartLine; l < doc.lineCount; l++) {
-            const text = doc.lineAt(l).text;
-            if (isCommentEnd(text)) {
-                commentEndLine = l;
-                break;
+        // 3. For decorative box banners (width > 0), hide closing asterisks border if left visible
+        if (width > 0) {
+            let commentEndLine = foldStartLine;
+            for (let l = foldStartLine; l < doc.lineCount; l++) {
+                const text = doc.lineAt(l).text;
+                if (isCommentEnd(text)) {
+                    commentEndLine = l;
+                    break;
+                }
             }
-        }
 
-        if (foldEndLine < commentEndLine) {
-            for (let l = foldEndLine + 1; l <= commentEndLine; l++) {
-                const nextText = doc.lineAt(l).text;
-                if (nextText.trim().length > 0) {
-                    hideDecorations.push({
-                        range: new vscode.Range(l, 0, l, nextText.length)
-                    });
+            if (foldEndLine < commentEndLine) {
+                for (let l = foldEndLine + 1; l <= commentEndLine; l++) {
+                    const nextText = doc.lineAt(l).text;
+                    if (isBannerLine(nextText) || isCommentEnd(nextText)) {
+                        hideDecorations.push({
+                            range: new vscode.Range(l, 0, l, nextText.length)
+                        });
+                    }
                 }
             }
         }
@@ -283,26 +290,102 @@ function updateFoldDecorations(editor: vscode.TextEditor | undefined): void {
 export class CommentFoldingRangeProvider implements vscode.FoldingRangeProvider {
     provideFoldingRanges(document: vscode.TextDocument): vscode.FoldingRange[] {
         const ranges: vscode.FoldingRange[] = [];
+        const braceStack: number[] = [];
+        const preprocStack: number[] = [];
         let inComment = false;
-        let startLine = 0;
+        let commentStartLine = 0;
+        let lineCommentStart = -1;
 
         for (let i = 0; i < document.lineCount; i++) {
-            const line = document.lineAt(i).text.trim();
-            if (!inComment) {
-                if (line.startsWith('/*')) {
-                    if (isCommentEnd(line) && !isDualTokenHeader(line)) {
-                        continue;
-                    }
-                    inComment = true;
-                    startLine = i;
-                }
-            } else {
+            const rawLine = document.lineAt(i).text;
+            const line = rawLine.trim();
+
+            if (inComment) {
                 if (isCommentEnd(line)) {
-                    ranges.push(new vscode.FoldingRange(startLine, i, vscode.FoldingRangeKind.Comment));
+                    ranges.push(new vscode.FoldingRange(commentStartLine, i, vscode.FoldingRangeKind.Comment));
                     inComment = false;
+                }
+                continue;
+            }
+
+            // Check if starting block comment
+            if (line.startsWith('/*')) {
+                if (lineCommentStart !== -1) {
+                    if (i - 1 > lineCommentStart) {
+                        ranges.push(new vscode.FoldingRange(lineCommentStart, i - 1, vscode.FoldingRangeKind.Comment));
+                    }
+                    lineCommentStart = -1;
+                }
+                if (isCommentEnd(line) && !isDualTokenHeader(line)) {
+                    continue;
+                }
+                inComment = true;
+                commentStartLine = i;
+                continue;
+            }
+
+            // Check consecutive // line comments
+            if (line.startsWith('//')) {
+                if (lineCommentStart === -1) {
+                    lineCommentStart = i;
+                }
+                continue;
+            } else if (lineCommentStart !== -1) {
+                if (i - 1 > lineCommentStart) {
+                    ranges.push(new vscode.FoldingRange(lineCommentStart, i - 1, vscode.FoldingRangeKind.Comment));
+                }
+                lineCommentStart = -1;
+            }
+
+            if (line.length === 0) {
+                continue;
+            }
+
+            // Preprocessor directives (#if, #ifdef, #ifndef, #region ... #endif, #endregion)
+            if (line.startsWith('#')) {
+                const parts = line.slice(1).trim().split(/\s+/);
+                const directive = parts[0];
+                if (['if', 'ifdef', 'ifndef', 'region'].includes(directive) || (directive === 'pragma' && line.includes('region') && !line.includes('endregion'))) {
+                    preprocStack.push(i);
+                } else if (['endif', 'endregion'].includes(directive) || (directive === 'pragma' && line.includes('endregion'))) {
+                    const start = preprocStack.pop();
+                    if (start !== undefined && i > start) {
+                        ranges.push(new vscode.FoldingRange(start, i, vscode.FoldingRangeKind.Region));
+                    }
+                }
+            }
+
+            // Braces {}
+            let inString: string | null = null;
+            for (let c = 0; c < rawLine.length; c++) {
+                const char = rawLine[c];
+                if (inString) {
+                    if (char === '\\') {
+                        c++;
+                    } else if (char === inString) {
+                        inString = null;
+                    }
+                } else {
+                    if (char === '"' || char === "'") {
+                        inString = char;
+                    } else if (char === '/' && rawLine[c + 1] === '/') {
+                        break;
+                    } else if (char === '{') {
+                        braceStack.push(i);
+                    } else if (char === '}') {
+                        const start = braceStack.pop();
+                        if (start !== undefined && i > start) {
+                            ranges.push(new vscode.FoldingRange(start, i));
+                        }
+                    }
                 }
             }
         }
+
+        if (lineCommentStart !== -1 && document.lineCount - 1 > lineCommentStart) {
+            ranges.push(new vscode.FoldingRange(lineCommentStart, document.lineCount - 1, vscode.FoldingRangeKind.Comment));
+        }
+
         return ranges;
     }
 }

@@ -3,4 +3,6 @@
 src/**
 tsconfig.json
 .gitignore
+.vsix_stage/**
+BuildVSIX.ps1
 node_modules/**

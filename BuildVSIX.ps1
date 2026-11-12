@@ -14,10 +14,16 @@
     .\BuildVSIX.ps1 -Install
 #>
 
-[CmdletBinding()]
 param (
-    [switch]$Install
+    [Alias('i')]
+    [switch]$Install,
+    [Parameter(ValueFromRemainingArguments = $true)]
+    [string[]]$ExtraArgs
 )
+
+if ($ExtraArgs -contains '--Install' -or $ExtraArgs -contains '--install' -or $ExtraArgs -contains '-i' -or $ExtraArgs -contains '--i') {
+    $Install = $true
+}
 
 $ErrorActionPreference = 'Stop'
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
@@ -105,7 +111,10 @@ Write-Host "      Compiled out/extension.js successfully."
 
 # 3. Stage package contents
 Write-Host "[3/4] Packaging VSIX structure..." -ForegroundColor Green
-$tempDir = Join-Path $env:TEMP ("vsix_stage_" + [Guid]::NewGuid().ToString())
+$tempDir = Join-Path $ScriptDir ".vsix_stage"
+if (Test-Path $tempDir) {
+    Remove-Item $tempDir -Recurse -Force
+}
 $stageExt = Join-Path $tempDir "extension"
 $stageOut = Join-Path $stageExt "out"
 
@@ -186,8 +195,9 @@ Add-Type -AssemblyName "System.IO.Compression" -ErrorAction SilentlyContinue
 Add-Type -AssemblyName "System.IO.Compression.FileSystem" -ErrorAction SilentlyContinue
 $zipFile = [System.IO.Compression.ZipFile]::Open($vsixOutputPath, [System.IO.Compression.ZipArchiveMode]::Create)
 
-Get-ChildItem -Path $tempDir -Recurse -File | ForEach-Object {
-    $relative = $_.FullName.Substring($tempDir.Length + 1).Replace('\', '/')
+$basePath = (Get-Item $tempDir).FullName.TrimEnd('\')
+Get-ChildItem -Path $basePath -Recurse -File | ForEach-Object {
+    $relative = $_.FullName.Substring($basePath.Length + 1).Replace('\', '/')
     [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zipFile, $_.FullName, $relative, [System.IO.Compression.CompressionLevel]::Optimal) | Out-Null
 }
 $zipFile.Dispose()

@@ -2,7 +2,7 @@
   "name": "c-comment-fold-helper",
   "displayName": "C/C++ Comment Fold Helper",
   "description": "Better C/C++ Comment Fold Previews",
-  "version": "0.1.2",
+  "version": "0.1.5",
   "publisher": "ngxx-fus",
   "repository": {
     "type": "git",
@@ -29,6 +29,17 @@
   ],
   "main": "./out/extension.js",
   "contributes": {
+    "configurationDefaults": {
+      "[c]": {
+        "editor.defaultFoldingRangeProvider": "ngxx-fus.c-comment-fold-helper"
+      },
+      "[cpp]": {
+        "editor.defaultFoldingRangeProvider": "ngxx-fus.c-comment-fold-helper"
+      },
+      "[cuda-cpp]": {
+        "editor.defaultFoldingRangeProvider": "ngxx-fus.c-comment-fold-helper"
+      }
+    },
     "commands": [
       {
         "command": "cCommentFoldHelper.toggleCompactBanner",

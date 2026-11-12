@@ -2,6 +2,7 @@ node_modules/
 out/
 dist/
 *.vsix
+.vsix_stage/
 .vscode-test/
 .DS_Store
 Thumbs.db
