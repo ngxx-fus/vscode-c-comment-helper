@@ -7,11 +7,24 @@ Smart C/C++ comment fold preview engine tailored for Embedded Systems and C/C++.
 ## Features
 
 - **Inline Brief Fold Previews (Zero-Gap Folding)**:
-  When folding any multi-line C/C++ comment or Doxygen banner, an inline preview of the brief title is automatically displayed next to the fold indicator (`...`) with **zero blank line gaps**:
+  When folding any multi-line C/C++ comment or Doxygen banner, an inline preview of the brief title is automatically displayed next to the fold indicator (`>`) with **zero blank line gaps** (strictly kept $\le$ 100 columns):
+
+  *Original multi-line comment:*
 
   ```c
-  /** @req{gpt_clear_external_source,SWFLEX-9,R_GPT_Open} The GPT shall clearing the timer with external sources. */
-  TEST(R_GPT_TG1, TC_ClearExternalSource)
+  /**
+   * @req{timer_clear_external_source,REQ-101,TIMER_Open} The timer shall clear counter with external sources.
+   *
+   * @verify{timer_clear_external_source} The counter register is reset after event generation.
+   */
+  TEST(TIMER_TG1, TC_ClearExternalSource)
+  ```
+
+  *When folded (clean 1-line preview with no dangling `*/` and zero blank lines):*
+
+  ```c
+  /** @req{timer_clear_external_source,REQ-101,TIMER_Open} The timer shall clear counter with exter... */
+  TEST(TIMER_TG1, TC_ClearExternalSource)
   ```
 
 - **100% View-Only (Safe Saving)**:
@@ -25,6 +38,9 @@ Smart C/C++ comment fold preview engine tailored for Embedded Systems and C/C++.
 
 - **Rule Brief Extraction**:
   Automatically extracts `@brief`, requirement tags (`@req{...}`, `@verify{...}`), or the first meaningful content line, skipping decorative borders.
+
+- **Toggle Fold All Comments** (<kbd>Alt+Shift+C</kbd> / <kbd>Ctrl+K, Ctrl+/</kbd>):
+  Conveniently folds or unfolds all comments in the active file with a single shortcut, without affecting functions, classes, or code blocks.
 
 - **Manual 1-Line Compact Banner Toggle** (<kbd>Alt+C</kbd> / <kbd>Ctrl+K, Ctrl+B</kbd>):
   Optionally convert comment blocks to a 1-line compact banner with full width and cache restoration.
@@ -54,14 +70,14 @@ To ensure VS Code always uses complete zero-gap comment folding instead of leavi
 ## Installation
 
 ```bash
-code --install-extension c-comment-fold-helper-0.1.8.vsix
+code --install-extension c-comment-fold-helper-0.1.9.vsix
 ```
 
 Or in VS Code:
 
 1. Open Extensions (<kbd>Ctrl+Shift+X</kbd>).
 2. Click `...` (Views and More Actions) in the top-right corner.
-3. Select **Install from VSIX...** and pick `c-comment-fold-helper-0.1.8.vsix`.
+3. Select **Install from VSIX...** and pick `c-comment-fold-helper-0.1.9.vsix`.
 
 ---
 
@@ -127,7 +143,6 @@ npm run package
 This runs `@vscode/vsce package` and outputs `c-comment-fold-helper-<version>.vsix` in the project root directory.
 
 ## Commit format
-
 
 ### Windows
 

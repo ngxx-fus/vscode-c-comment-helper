@@ -2,7 +2,7 @@
   "name": "c-comment-fold-helper",
   "displayName": "C/C++ Comment Fold Helper",
   "description": "Better C/C++ Comment Fold Previews",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "publisher": "ngxx-fus",
   "repository": {
     "type": "git",
@@ -42,6 +42,10 @@
     },
     "commands": [
       {
+        "command": "cCommentFoldHelper.toggleFoldAllComments",
+        "title": "C/C++ Comment: Toggle Fold All Comments"
+      },
+      {
         "command": "cCommentFoldHelper.toggleCompactBanner",
         "title": "C/C++ Comment: Toggle Compact Banner / Multi-line Box"
       },
@@ -55,6 +59,16 @@
       }
     ],
     "keybindings": [
+      {
+        "command": "cCommentFoldHelper.toggleFoldAllComments",
+        "key": "alt+shift+c",
+        "when": "editorTextFocus && (editorLangId == c || editorLangId == cpp || editorLangId == cuda-cpp)"
+      },
+      {
+        "command": "cCommentFoldHelper.toggleFoldAllComments",
+        "key": "ctrl+k ctrl+/",
+        "when": "editorTextFocus && (editorLangId == c || editorLangId == cpp || editorLangId == cuda-cpp)"
+      },
       {
         "command": "cCommentFoldHelper.toggleCompactBanner",
         "key": "alt+c",

@@ -287,57 +287,72 @@ function updateFoldDecorations(editor: vscode.TextEditor | undefined): void {
     editor.setDecorations(hideLineDecorationType, hideDecorations);
 }
 
-export class CommentFoldingRangeProvider implements vscode.FoldingRangeProvider {
-    provideFoldingRanges(document: vscode.TextDocument): vscode.FoldingRange[] {
-        const ranges: vscode.FoldingRange[] = [];
-        const braceStack: number[] = [];
-        const preprocStack: number[] = [];
-        let inComment = false;
-        let commentStartLine = 0;
-        let lineCommentStart = -1;
+export function getCommentFoldingRanges(document: vscode.TextDocument): vscode.FoldingRange[] {
+    const ranges: vscode.FoldingRange[] = [];
+    let inComment = false;
+    let commentStartLine = 0;
+    let lineCommentStart = -1;
 
-        for (let i = 0; i < document.lineCount; i++) {
-            const rawLine = document.lineAt(i).text;
-            const line = rawLine.trim();
+    for (let i = 0; i < document.lineCount; i++) {
+        const rawLine = document.lineAt(i).text;
+        const line = rawLine.trim();
 
-            if (inComment) {
-                if (isCommentEnd(line)) {
-                    ranges.push(new vscode.FoldingRange(commentStartLine, i, vscode.FoldingRangeKind.Comment));
-                    inComment = false;
-                }
-                continue;
+        if (inComment) {
+            if (isCommentEnd(line)) {
+                ranges.push(new vscode.FoldingRange(commentStartLine, i, vscode.FoldingRangeKind.Comment));
+                inComment = false;
             }
+            continue;
+        }
 
-            // Check if starting block comment
-            if (line.startsWith('/*')) {
-                if (lineCommentStart !== -1) {
-                    if (i - 1 > lineCommentStart) {
-                        ranges.push(new vscode.FoldingRange(lineCommentStart, i - 1, vscode.FoldingRangeKind.Comment));
-                    }
-                    lineCommentStart = -1;
-                }
-                if (isCommentEnd(line) && !isDualTokenHeader(line)) {
-                    continue;
-                }
-                inComment = true;
-                commentStartLine = i;
-                continue;
-            }
-
-            // Check consecutive // line comments
-            if (line.startsWith('//')) {
-                if (lineCommentStart === -1) {
-                    lineCommentStart = i;
-                }
-                continue;
-            } else if (lineCommentStart !== -1) {
+        // Check if starting block comment
+        if (line.startsWith('/*')) {
+            if (lineCommentStart !== -1) {
                 if (i - 1 > lineCommentStart) {
                     ranges.push(new vscode.FoldingRange(lineCommentStart, i - 1, vscode.FoldingRangeKind.Comment));
                 }
                 lineCommentStart = -1;
             }
+            if (isCommentEnd(line) && !isDualTokenHeader(line)) {
+                continue;
+            }
+            inComment = true;
+            commentStartLine = i;
+            continue;
+        }
 
-            if (line.length === 0) {
+        // Check consecutive // line comments
+        if (line.startsWith('//')) {
+            if (lineCommentStart === -1) {
+                lineCommentStart = i;
+            }
+            continue;
+        } else if (lineCommentStart !== -1) {
+            if (i - 1 > lineCommentStart) {
+                ranges.push(new vscode.FoldingRange(lineCommentStart, i - 1, vscode.FoldingRangeKind.Comment));
+            }
+            lineCommentStart = -1;
+        }
+    }
+
+    if (lineCommentStart !== -1 && document.lineCount - 1 > lineCommentStart) {
+        ranges.push(new vscode.FoldingRange(lineCommentStart, document.lineCount - 1, vscode.FoldingRangeKind.Comment));
+    }
+
+    return ranges;
+}
+
+export class CommentFoldingRangeProvider implements vscode.FoldingRangeProvider {
+    provideFoldingRanges(document: vscode.TextDocument): vscode.FoldingRange[] {
+        const ranges: vscode.FoldingRange[] = getCommentFoldingRanges(document);
+        const braceStack: number[] = [];
+        const preprocStack: number[] = [];
+
+        for (let i = 0; i < document.lineCount; i++) {
+            const rawLine = document.lineAt(i).text;
+            const line = rawLine.trim();
+
+            if (line.length === 0 || line.startsWith('/*') || line.startsWith('*') || line.startsWith('//')) {
                 continue;
             }
 
@@ -380,10 +395,6 @@ export class CommentFoldingRangeProvider implements vscode.FoldingRangeProvider 
                     }
                 }
             }
-        }
-
-        if (lineCommentStart !== -1 && document.lineCount - 1 > lineCommentStart) {
-            ranges.push(new vscode.FoldingRange(lineCommentStart, document.lineCount - 1, vscode.FoldingRangeKind.Comment));
         }
 
         return ranges;
@@ -434,7 +445,63 @@ export function activate(context: vscode.ExtensionContext): void {
         })
     );
 
-    // 5. Command: Set as default folding provider in settings
+    // 5. Command: Toggle fold all comments only (Alt+Shift+C / Ctrl+K Ctrl+/)
+    const documentCommentsFoldedState = new Map<string, boolean>();
+    context.subscriptions.push(
+        vscode.commands.registerCommand('cCommentFoldHelper.toggleFoldAllComments', async () => {
+            const editor = vscode.window.activeTextEditor;
+            if (!editor) {
+                return;
+            }
+
+            const doc = editor.document;
+            if (doc.languageId !== 'c' && doc.languageId !== 'cpp' && doc.languageId !== 'cuda-cpp') {
+                return;
+            }
+
+            const commentRanges = getCommentFoldingRanges(doc);
+            if (commentRanges.length === 0) {
+                return;
+            }
+
+            const commentStartLines = commentRanges.map(r => r.start);
+            const uri = doc.uri.toString();
+
+            // Determine if comments are currently folded in the viewport
+            let isFolded = documentCommentsFoldedState.get(uri);
+            if (isFolded === undefined) {
+                const hasFoldedInView = editor.visibleRanges.some((vr, i) => {
+                    if (i === editor.visibleRanges.length - 1) {
+                        return false;
+                    }
+                    return commentStartLines.includes(vr.end.line);
+                });
+                isFolded = hasFoldedInView;
+            }
+
+            if (isFolded) {
+                await vscode.commands.executeCommand('editor.unfold', {
+                    levels: 1,
+                    direction: 'down',
+                    selectionLines: commentStartLines
+                });
+                documentCommentsFoldedState.set(uri, false);
+            } else {
+                await vscode.commands.executeCommand('editor.fold', {
+                    levels: 1,
+                    direction: 'down',
+                    selectionLines: commentStartLines
+                });
+                documentCommentsFoldedState.set(uri, true);
+            }
+
+            setTimeout(() => {
+                updateFoldDecorations(editor);
+            }, 50);
+        })
+    );
+
+    // 6. Command: Set as default folding provider in settings
     context.subscriptions.push(
         vscode.commands.registerCommand('cCommentFoldHelper.setDefaultFoldingProvider', async () => {
             const config = vscode.workspace.getConfiguration();
